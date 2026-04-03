@@ -5,7 +5,24 @@ use App\Http\Controllers\Api\ConsultationController;
 use App\Http\Controllers\Api\MedicalFileController;
 use App\Http\Controllers\Api\MedicalProfileController;
 use App\Http\Controllers\Api\PhysicianProfileController;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Route;
+
+// يُستخدم مرة للنشر (مثلاً Render بدون shell). عيّن MIGRATE_HTTP_SECRET في Render ثم احذف المسار أو المتغير بعد الانتهاء.
+Route::get('/run-migrations', function () {
+    $secret = (string) env('MIGRATE_HTTP_SECRET', '');
+    if ($secret === '' || ! hash_equals($secret, (string) request()->query('key', ''))) {
+        abort(404);
+    }
+
+    try {
+        Artisan::call('migrate', ['--force' => true]);
+
+        return 'تم إنشاء الجداول بنجاح: '.Artisan::output();
+    } catch (\Throwable $e) {
+        return 'حدث خطأ: '.$e->getMessage();
+    }
+});
 
 Route::prefix('v1')->group(function () {
     Route::post('/auth/register', [AuthController::class, 'register']);
