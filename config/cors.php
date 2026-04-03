@@ -8,6 +8,7 @@ return [
     // Dev: allow Next.js locally. FRONTEND_URL = deployed frontend (Vercel, etc.).
     'allowed_origins' => array_values(array_filter([
         env('FRONTEND_URL', 'http://localhost:3000'),
+        'https://react-app-peach-theta.vercel.app',
         'http://localhost:3000',
         'http://127.0.0.1:3000',
         'http://localhost:3001',
