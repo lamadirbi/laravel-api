@@ -22,22 +22,30 @@ class DemoDataSeeder extends Seeder
         // clean up seed files (safe even if missing)
         Storage::disk('local')->deleteDirectory('seed');
 
-        // fixed accounts for easier login
-        $admin = User::factory()->admin()->create([
-            'name' => 'Admin',
-            'email' => 'admin@example.com',
-            'password' => Hash::make('password'),
-        ]);
+        // fixed accounts for easier login (updateOrCreate = آمن عند إعادة تشغيل السيدر)
+        $admin = User::updateOrCreate(
+            ['email' => 'admin@example.com'],
+            [
+                'name' => 'Admin',
+                'password' => Hash::make('password'),
+                'role' => User::ROLE_ADMIN,
+                'email_verified_at' => now(),
+            ]
+        );
 
         $physicians = collect([
             ['name' => 'د. أحمد', 'email' => 'dr.ahmad@example.com'],
             ['name' => 'د. سارة', 'email' => 'dr.sara@example.com'],
             ['name' => 'د. محمد', 'email' => 'dr.mohammad@example.com'],
-        ])->map(fn (array $row) => User::factory()->physician()->create([
-            'name' => $row['name'],
-            'email' => $row['email'],
-            'password' => Hash::make('password'),
-        ]));
+        ])->map(fn (array $row) => User::updateOrCreate(
+            ['email' => $row['email']],
+            [
+                'name' => $row['name'],
+                'password' => Hash::make('password'),
+                'role' => User::ROLE_PHYSICIAN,
+                'email_verified_at' => now(),
+            ]
+        ));
 
         $patients = collect([
             ['name' => 'مريم', 'email' => 'patient.maryam@example.com'],
@@ -45,26 +53,42 @@ class DemoDataSeeder extends Seeder
             ['name' => 'نور', 'email' => 'patient.noor@example.com'],
             ['name' => 'يوسف', 'email' => 'patient.yousef@example.com'],
             ['name' => 'هبة', 'email' => 'patient.heba@example.com'],
-        ])->map(fn (array $row) => User::factory()->patient()->create([
-            'name' => $row['name'],
-            'email' => $row['email'],
-            'password' => Hash::make('password'),
-        ]));
+        ])->map(fn (array $row) => User::updateOrCreate(
+            ['email' => $row['email']],
+            [
+                'name' => $row['name'],
+                'password' => Hash::make('password'),
+                'role' => User::ROLE_PATIENT,
+                'email_verified_at' => now(),
+            ]
+        ));
 
-        // extra random users
-        $patients = $patients->merge(User::factory()->count(12)->patient()->create());
-        $physicians = $physicians->merge(User::factory()->count(5)->physician()->create());
+        // extra random users (بريد فريد صريح لتفادي تكرار faker مع بيانات قديمة)
+        $patients = $patients->merge(collect(range(1, 12))->map(fn () => User::factory()->patient()->create([
+            'email' => 'seed-patient-'.Str::uuid().'@example.test',
+        ])));
+        $physicians = $physicians->merge(collect(range(1, 5))->map(fn () => User::factory()->physician()->create([
+            'email' => 'seed-physician-'.Str::uuid().'@example.test',
+        ])));
 
         // medical profiles for patients
         foreach ($patients as $p) {
-            MedicalProfile::factory()->create(['user_id' => $p->id]);
+            MedicalProfile::firstOrCreate(
+                ['user_id' => $p->id],
+                MedicalProfile::factory()->make()->toArray()
+            );
         }
 
         // physician profiles + certificate attachments (real files)
         foreach ($physicians as $doc) {
-            $profile = PhysicianProfile::factory()->create([
-                'user_id' => $doc->id,
-            ]);
+            $profile = PhysicianProfile::firstOrCreate(
+                ['user_id' => $doc->id],
+                PhysicianProfile::factory()->make(['user_id' => $doc->id])->toArray()
+            );
+
+            if (! $profile->wasRecentlyCreated) {
+                continue;
+            }
 
             $certCount = random_int(1, 3);
             $certFileIds = [];
