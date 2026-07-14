@@ -85,6 +85,15 @@ class PhysicianProfileController extends Controller
             $profile->certificate_file_ids = $id ? [(int) $id] : [];
         }
 
+        $shouldResubmit = (bool) $request->boolean('resubmit');
+
+        if ($shouldResubmit && $profile->verification_status !== PhysicianProfile::STATUS_APPROVED) {
+            $profile->verification_status = PhysicianProfile::STATUS_PENDING;
+            $profile->rejection_reason = null;
+            $profile->verified_at = null;
+            $profile->verified_by = null;
+        }
+
         $profile->save();
 
         $profile->load('certificateFile');
