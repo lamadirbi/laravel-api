@@ -38,6 +38,9 @@ class ConsultationController extends Controller
             return response()->json(['message' => 'غير مصرح'], 403);
         }
 
+        $perPage = (int) $request->integer('per_page', 50);
+        $perPage = max(1, min($perPage, 100));
+
         $items = Consultation::query()
             ->whereNull('physician_id')
             ->where('assignment_mode', Consultation::MODE_QUEUE)
@@ -46,8 +49,8 @@ class ConsultationController extends Controller
                 'patient:id,name,email,role',
                 'patient.medicalProfile',
             ])
-            ->orderBy('submitted_at')
-            ->paginate(20);
+            ->orderByDesc('submitted_at')
+            ->paginate($perPage);
 
         return response()->json($items);
     }
@@ -104,7 +107,10 @@ class ConsultationController extends Controller
             $query->where('patient_id', $user->id);
         }
 
-        $items = $query->orderByDesc('submitted_at')->paginate(20);
+        $perPage = (int) $request->integer('per_page', 50);
+        $perPage = max(1, min($perPage, 100));
+
+        $items = $query->orderByDesc('submitted_at')->paginate($perPage);
 
         return response()->json($items);
     }
