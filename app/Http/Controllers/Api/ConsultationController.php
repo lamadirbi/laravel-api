@@ -287,12 +287,19 @@ class ConsultationController extends Controller
                 ['consultation_id' => $consultation->id],
             );
         } elseif ($role === 'physician' && $consultation->patient) {
-            AppNotifier::notify(
+            $priorPhysicianMessages = $consultation->messages()
+                ->where('sender_role', 'physician')
+                ->where('id', '!=', $message->id)
+                ->exists();
+
+            AppNotifier::notifyOnce(
                 $consultation->patient,
-                'رد جديد من الطبيب',
-                "الدكتور {$user->name} رد على استشارتك #{$consultation->id}.",
+                $priorPhysicianMessages ? 'رد جديد من الطبيب' : 'رد الطبيب على استشارتك',
+                $priorPhysicianMessages
+                    ? "الدكتور {$user->name} أرسل متابعة على استشارتك #{$consultation->id}."
+                    : "الدكتور {$user->name} أرسل توصياته للاستشارة #{$consultation->id}.",
                 "/consultations/{$consultation->id}",
-                'consultation_physician_message',
+                $priorPhysicianMessages ? 'consultation_physician_message' : 'consultation_replied',
                 ['consultation_id' => $consultation->id],
             );
         }
@@ -395,6 +402,9 @@ class ConsultationController extends Controller
             'mark_completed' => ['nullable', 'boolean'],
         ]);
 
+        $hadPhysicianReply = filled($consultation->physician_response)
+            || $consultation->messages()->where('sender_role', 'physician')->exists();
+
         $consultation->physician_id = $user->id;
         $consultation->physician_response = $data['response'];
         $consultation->responded_at = Carbon::now();
@@ -420,8 +430,9 @@ class ConsultationController extends Controller
         ]);
         $this->hydratePhysicianCertificateFiles($consultation);
 
-        if ($consultation->patient) {
-            AppNotifier::notify(
+        // إشعار واحد عند أول رد فقط — لا تكرار عند إعادة الإرسال أو الضغط المزدوج
+        if (! $hadPhysicianReply && $consultation->patient) {
+            AppNotifier::notifyOnce(
                 $consultation->patient,
                 'رد الطبيب على استشارتك',
                 "الدكتور {$user->name} أرسل توصياته للاستشارة #{$consultation->id}.",

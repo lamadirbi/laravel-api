@@ -13,7 +13,7 @@ function resetPending(string $email): void
     $u = User::updateOrCreate(
         ['email' => $email],
         [
-            'name' => 'د. معلّق اختبار',
+            'name' => 'د. لينا الداهودي',
             'password' => Hash::make('password'),
             'role' => User::ROLE_PHYSICIAN,
             'email_verified_at' => now(),
@@ -24,8 +24,8 @@ function resetPending(string $email): void
     PhysicianProfile::updateOrCreate(
         ['user_id' => $u->id],
         [
-            'specialty' => 'طب الأسرة',
-            'certificate' => 'شهادة اختبار UAT معلّق',
+            'specialty' => 'الأمراض الجلدية',
+            'certificate' => 'شهادة اختصاص جلدية — قيد مراجعة الإدارة.',
             'verification_status' => PhysicianProfile::STATUS_PENDING,
             'rejection_reason' => null,
             'verified_at' => null,
