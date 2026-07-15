@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Consultation;
+use App\Models\ConsultationMessage;
 use App\Models\MedicalFile;
 use App\Models\PhysicianProfile;
 use App\Models\User;
@@ -140,6 +141,7 @@ class ConsultationController extends Controller
             'physician:id,name,email,role',
             'physician.physicianProfile.certificateFile:id,original_name,mime_type,file_kind,size_bytes,created_at',
             'medicalFiles:id,owner_user_id,uploaded_by_user_id,consultation_id,original_name,mime_type,size_bytes,file_kind,created_at',
+            'messages.sender:id,name,role',
         ]);
 
         if ($consultation->physician_id !== null && $consultation->physician === null) {
@@ -156,10 +158,97 @@ class ConsultationController extends Controller
         }
 
         $this->hydratePhysicianCertificateFiles($consultation);
+        $this->ensureLegacyPhysicianMessage($consultation);
 
         return response()->json([
             'consultation' => $consultation,
         ]);
+    }
+
+    public function update(Request $request, Consultation $consultation)
+    {
+        /** @var User $user */
+        $user = $request->user();
+
+        if ($user->role !== User::ROLE_PATIENT || $consultation->patient_id !== $user->id) {
+            return response()->json(['message' => 'غير مصرح'], 403);
+        }
+
+        if ($consultation->physician_response || $consultation->messages()->where('sender_role', 'physician')->exists()) {
+            return response()->json(['message' => 'لا يمكن تعديل الاستشارة بعد رد الطبيب.'], 422);
+        }
+
+        $data = $request->validate([
+            'question_text' => ['required', 'string', 'min:10'],
+        ]);
+
+        $consultation->question_text = $data['question_text'];
+        $consultation->save();
+
+        return response()->json([
+            'consultation' => $consultation->fresh()->load([
+                'patient:id,name,role',
+                'patient.medicalProfile',
+                'physician:id,name,role',
+                'medicalFiles:id,owner_user_id,uploaded_by_user_id,consultation_id,original_name,mime_type,size_bytes,file_kind,created_at',
+                'messages.sender:id,name,role',
+            ]),
+        ]);
+    }
+
+    public function storeMessage(Request $request, Consultation $consultation)
+    {
+        /** @var User $user */
+        $user = $request->user();
+
+        $data = $request->validate([
+            'body' => ['required', 'string', 'min:2'],
+        ]);
+
+        if ($user->role === User::ROLE_PATIENT) {
+            if ($consultation->patient_id !== $user->id) {
+                return response()->json(['message' => 'غير مصرح'], 403);
+            }
+            if (! $consultation->physician_response && ! $consultation->messages()->where('sender_role', 'physician')->exists()) {
+                return response()->json(['message' => 'يمكنك الرد بعد استلام إجابة الطبيب.'], 422);
+            }
+            $role = 'patient';
+        } elseif ($user->role === User::ROLE_PHYSICIAN) {
+            if (! $user->isVerifiedPhysician()) {
+                return response()->json(['message' => 'حسابك بانتظار موافقة الإدارة.'], 403);
+            }
+            if ($consultation->physician_id && $consultation->physician_id !== $user->id) {
+                return response()->json(['message' => 'هذه الاستشارة لطبيب آخر'], 403);
+            }
+            $role = 'physician';
+            $consultation->physician_id = $user->id;
+            $consultation->physician_response = $data['body'];
+            $consultation->responded_at = Carbon::now();
+            $consultation->save();
+        } else {
+            return response()->json(['message' => 'غير مصرح'], 403);
+        }
+
+        $message = ConsultationMessage::create([
+            'consultation_id' => $consultation->id,
+            'sender_id' => $user->id,
+            'sender_role' => $role,
+            'body' => $data['body'],
+        ]);
+
+        $consultation->load([
+            'patient:id,name,role',
+            'patient.medicalProfile',
+            'physician:id,name,role',
+            'physician.physicianProfile',
+            'medicalFiles:id,owner_user_id,uploaded_by_user_id,consultation_id,original_name,mime_type,size_bytes,file_kind,created_at',
+            'messages.sender:id,name,role',
+        ]);
+
+        return response()->json([
+            'message' => $message->load('sender:id,name,role'),
+            'consultation' => $consultation,
+        ], 201);
     }
 
     public function store(Request $request)
@@ -250,17 +339,51 @@ class ConsultationController extends Controller
         }
         $consultation->save();
 
+        ConsultationMessage::create([
+            'consultation_id' => $consultation->id,
+            'sender_id' => $user->id,
+            'sender_role' => 'physician',
+            'body' => $data['response'],
+        ]);
+
         $consultation->load([
             'patient:id,name,role',
             'patient.medicalProfile',
             'physician:id,name,role',
             'physician.physicianProfile.certificateFile:id,original_name,mime_type,file_kind,size_bytes,created_at',
             'medicalFiles:id,owner_user_id,uploaded_by_user_id,consultation_id,original_name,mime_type,size_bytes,file_kind,created_at',
+            'messages.sender:id,name,role',
         ]);
         $this->hydratePhysicianCertificateFiles($consultation);
 
         return response()->json([
             'consultation' => $consultation,
         ]);
+    }
+
+    protected function ensureLegacyPhysicianMessage(Consultation $consultation): void
+    {
+        if (! $consultation->physician_response || $consultation->relationLoaded('messages') === false) {
+            return;
+        }
+
+        if ($consultation->messages->isNotEmpty()) {
+            return;
+        }
+
+        if (! $consultation->physician_id) {
+            return;
+        }
+
+        $legacy = ConsultationMessage::create([
+            'consultation_id' => $consultation->id,
+            'sender_id' => $consultation->physician_id,
+            'sender_role' => 'physician',
+            'body' => $consultation->physician_response,
+            'created_at' => $consultation->responded_at ?? $consultation->updated_at,
+            'updated_at' => $consultation->responded_at ?? $consultation->updated_at,
+        ]);
+        $legacy->load('sender:id,name,role');
+        $consultation->setRelation('messages', collect([$legacy]));
     }
 }

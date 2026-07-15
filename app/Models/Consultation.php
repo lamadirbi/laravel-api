@@ -47,4 +47,9 @@ class Consultation extends Model
     {
         return $this->hasMany(MedicalFile::class);
     }
+
+    public function messages(): HasMany
+    {
+        return $this->hasMany(ConsultationMessage::class)->orderBy('created_at');
+    }
 }

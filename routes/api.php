@@ -54,6 +54,9 @@ Route::prefix('v1')->group(function () {
         Route::get('/consultations/queue', [ConsultationController::class, 'queue'])
             ->middleware(['role:physician', 'physician.verified']);
         Route::get('/consultations/{consultation}', [ConsultationController::class, 'show']);
+        Route::patch('/consultations/{consultation}', [ConsultationController::class, 'update'])
+            ->middleware('role:patient');
+        Route::post('/consultations/{consultation}/messages', [ConsultationController::class, 'storeMessage']);
         Route::post('/consultations/{consultation}/claim', [ConsultationController::class, 'claim'])
             ->middleware(['role:physician', 'physician.verified']);
         Route::post('/consultations', [ConsultationController::class, 'store'])
