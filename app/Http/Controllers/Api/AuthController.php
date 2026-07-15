@@ -7,6 +7,7 @@ use App\Models\PhysicianProfile;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Password;
 use Illuminate\Validation\Rule;
 
 class AuthController extends Controller
@@ -112,5 +113,75 @@ class AuthController extends Controller
         }
 
         return response()->json(['message' => 'تم تسجيل الخروج']);
+    }
+
+    public function forgotPassword(Request $request)
+    {
+        $data = $request->validate([
+            'email' => ['required', 'email'],
+        ]);
+
+        $email = strtolower(trim($data['email']));
+
+        /** @var User|null $user */
+        $user = User::where('email', $email)->first();
+        if ($user && ! $user->is_disabled) {
+            Password::sendResetLink(['email' => $email]);
+        }
+
+        return response()->json([
+            'message' => 'إذا كان البريد مسجّلاً، أُرسلت تعليمات إعادة التعيين.',
+        ]);
+    }
+
+    public function resetPassword(Request $request)
+    {
+        $data = $request->validate([
+            'token' => ['required', 'string'],
+            'email' => ['required', 'email'],
+            'password' => ['required', 'string', 'min:8', 'confirmed'],
+        ]);
+
+        $data['email'] = strtolower(trim($data['email']));
+
+        $status = Password::reset(
+            $data,
+            function (User $user, string $password) {
+                $user->forceFill(['password' => $password])->save();
+                $user->tokens()->delete();
+            }
+        );
+
+        if ($status === Password::PASSWORD_RESET) {
+            return response()->json([
+                'message' => 'تمت إعادة تعيين كلمة المرور. يمكنك تسجيل الدخول الآن.',
+            ]);
+        }
+
+        return response()->json([
+            'message' => __($status),
+        ], 422);
+    }
+
+    public function changePassword(Request $request)
+    {
+        /** @var User $user */
+        $user = $request->user();
+
+        $data = $request->validate([
+            'current_password' => ['required', 'string'],
+            'password' => ['required', 'string', 'min:8', 'confirmed'],
+        ]);
+
+        if (! Hash::check($data['current_password'], $user->password)) {
+            return response()->json(['message' => 'كلمة المرور الحالية غير صحيحة.'], 422);
+        }
+
+        $user->forceFill(['password' => $data['password']])->save();
+        $user->tokens()->delete();
+
+        return response()->json([
+            'message' => 'تم تغيير كلمة المرور. سجّل دخولك من جديد.',
+        ]);
     }
 }

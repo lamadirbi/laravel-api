@@ -31,10 +31,13 @@ Route::prefix('v1')->group(function () {
     Route::get('/platform-stats', [PlatformStatsController::class, 'index']);
     Route::post('/auth/register', [AuthController::class, 'register']);
     Route::post('/auth/login', [AuthController::class, 'login']);
+    Route::post('/auth/forgot-password', [AuthController::class, 'forgotPassword']);
+    Route::post('/auth/reset-password', [AuthController::class, 'resetPassword']);
 
     Route::middleware(['auth:sanctum', 'active'])->group(function () {
         Route::get('/auth/me', [AuthController::class, 'me']);
         Route::post('/auth/logout', [AuthController::class, 'logout']);
+        Route::post('/auth/change-password', [AuthController::class, 'changePassword']);
 
         Route::get('/medical-profile', [MedicalProfileController::class, 'show']);
         Route::put('/medical-profile', [MedicalProfileController::class, 'update']);
